@@ -1,17 +1,21 @@
-# GRO722 problématique
-# Auteur: Jean-Samuel Lauzon et  Jonathan Vincent
-# Hivers 2021
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-import torch
-from torch import nn
+import argparse
+import os
+import pickle
+
+import matplotlib.pyplot as plt
 import numpy as np
-from torch.utils.data import Dataset, DataLoader
-from models import *
-from dataset import *
-from metrics import *
+import torch
+from dataset import HandwrittenWords
+from metrics import confusion_matrix, edit_distance
+from models import Trajectory2Seq
+from torch import nn
+from torch.utils.data import DataLoader, random_split
+from tqdm import tqdm
 
-if __name__ == '__main__':
-
+if __name__ == "__main__":
     # ---------------- Paramètres et hyperparamètres ----------------#
     force_cpu = False           # Forcer a utiliser le cpu?
     trainning = True           # Entrainement?
