@@ -14,7 +14,7 @@ class HandwrittenWords(Dataset):
 
     ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
-    def __init__(self, filename):
+    def __init__(self, filename, smoothing: bool = False):
         # Lecture du text
         self.pad_symbol = pad_symbol = "<pad>"
         self.start_symbol = start_symbol = "<sos>"
@@ -76,17 +76,19 @@ class HandwrittenWords(Dataset):
                 )
             )
 
-        for i in range(len(self.data)):
-            for j in range(2):
-                win_size = 7
-                conv = (
-                    np.convolve(self.data[i][1][j], np.ones(win_size), mode="valid")
-                    / win_size
-                )
-                pad_size = len(self.data[i][1][j]) - len(
-                    conv
-                )  # Number of zeros for padding
-                self.data[i][1][j] = np.pad(conv, (0, pad_size))  # Pad at end
+        # Smoothing with moving average
+        if smoothing:
+            for i in range(len(self.data)):
+                for j in range(2):
+                    win_size = 7
+                    conv = (
+                        np.convolve(self.data[i][1][j], np.ones(win_size), mode="valid")
+                        / win_size
+                    )
+                    pad_size = len(self.data[i][1][j]) - len(
+                        conv
+                    )  # Number of zeros for padding
+                    self.data[i][1][j] = np.pad(conv, (0, pad_size))  # Pad at end
 
     def __len__(self):
         return len(self.data)
@@ -96,7 +98,6 @@ class HandwrittenWords(Dataset):
 
     def visualisation(self, idx):
         # Visualisation des échantillons
-        processed = self.data[idx][1].copy()
         plt.figure()
         title_no_special = [
             self.int2sym[i]
@@ -109,7 +110,6 @@ class HandwrittenWords(Dataset):
             ]
         ]
         plt.plot(self.data[idx][1][0], self.data[idx][1][1], label="Original")
-        plt.plot(processed[0], processed[1], label="Processed")
         plt.legend()
         plt.title("".join(title_no_special))
         plt.show(block=True)
