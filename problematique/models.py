@@ -1,11 +1,7 @@
-# GRO722 problématique
-# Auteur: Jean-Samuel Lauzon et  Jonathan Vincent
-# Hivers 2021
+# -*- coding: utf-8 -*-
 
 import torch
-from torch import nn
-import numpy as np
-import matplotlib.pyplot as plt
+from torch import Tensor, nn
 
 class trajectory2seq(nn.Module):
     def __init__(self, hidden_dim, n_layers, int2symb, symb2int, dict_size, device, maxlen):
