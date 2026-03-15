@@ -3,17 +3,27 @@
 import torch
 from torch import Tensor, nn
 
-class trajectory2seq(nn.Module):
-    def __init__(self, hidden_dim, n_layers, int2symb, symb2int, dict_size, device, maxlen):
-        super(trajectory2seq, self).__init__()
+
+class Trajectory2Seq(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_layers: int,
+        int2symb: dict[int, str],
+        symb2int: dict[str, int],
+        num_symbols: int,
+        maxlen: dict[str, int],
+        attention_mod: bool = False,
+    ):
+        super().__init__()
         # Definition des parametres
         self.hidden_dim = hidden_dim
-        self.n_layers = n_layers
-        self.device = device
+        self.n_layers = num_layers
         self.symb2int = symb2int
         self.int2symb = int2symb
-        self.dict_size = dict_size
+        self.num_symbols = num_symbols
         self.maxlen = maxlen
+        self.attention_mod = attention_mod
 
         # Definition des couches
         # Couches pour rnn
