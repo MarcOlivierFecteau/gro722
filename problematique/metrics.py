@@ -10,7 +10,7 @@ def edit_distance(x, y):
     Levenshtein distance. Time complexity: O(m*n). Space complexity: O(m*n).
 
     Args:
-        x, y (str): The symbolic chains to compare.
+        x, y (list[str]): The symbolic chains to compare.
 
     Returns:
         out (int): Levenshtein distance.
