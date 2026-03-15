@@ -25,18 +25,20 @@ class Trajectory2Seq(nn.Module):
         self.maxlen = maxlen
         self.attention_mod = attention_mod
 
-        # Definition des couches
-        # Couches pour rnn
-        # À compléter
+        # Définition des couches
+        # Couches pour RNN
+        self.enc = nn.GRU(2, self.hidden_dim, self.n_layers, batch_first=True)
+        self.dec = nn.GRU(
+            self.hidden_dim, self.hidden_dim, self.n_layers, batch_first=True
+        )
+        self.embed = nn.Embedding(self.num_symbols, self.hidden_dim)
 
         # Couches pour attention
-        # À compléter
+        self.attn_ff = nn.Linear(self.hidden_dim * 2, self.hidden_dim)
+        self.query = nn.Linear(self.hidden_dim, self.hidden_dim)
 
         # Couche dense pour la sortie
-        # À compléter
+        self.fc = nn.Linear(self.hidden_dim, self.num_symbols)
 
-    def forward(self, x):
-        # À compléter
-        return None
-    
+        self._decoder = self.decoder_with_attention if attention_mod else self.decoder
 
