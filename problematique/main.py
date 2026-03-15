@@ -96,7 +96,6 @@ if __name__ == "__main__":
     # Instanciation de l'ensemble de données
     dataset = HandwrittenWords("problematique/data_trainval.p")
 
-    
     # Séparation de l'ensemble de données (entraînement et validation)
     num_samples = len(dataset)
     train_size = int(7 / 9 * num_samples)
@@ -144,10 +143,23 @@ if __name__ == "__main__":
     )
     print("-" * 30)
 
-    if trainning:
+    if args.training:
+        # Initialisation affichage
+        if args.learning_curves:
+            train_distance: list[int] = []
+            train_loss: list[float] = []
+            val_distance: list[int] = []
+            val_loss: list[float] = []
+            fig, ax = plt.subplots(1, 2, sharex="row")
+            ax[0].set_title("Loss")
+            ax[1].set_title("Levenshtein Distance")
+            ax[0].set_xlabel("Epoch")
+            ax[0].set_ylabel("Loss")
+            ax[1].set_ylabel("Levenshtein Distance")
 
         # Fonction de coût et optimizateur
-        # À compléter
+        criterion = nn.CrossEntropyLoss()  # NOTE: ignorer symboles <pad>
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
         for epoch in range(1, n_epochs + 1):
             # Entraînement
