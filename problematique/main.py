@@ -17,26 +17,81 @@ from tqdm import tqdm
 
 if __name__ == "__main__":
     # ---------------- Paramètres et hyperparamètres ----------------#
-    force_cpu = False           # Forcer a utiliser le cpu?
-    trainning = True           # Entrainement?
-    test = True                # Test?
-    learning_curves = True     # Affichage des courbes d'entrainement?
-    gen_test_images = True     # Génération images test?
-    seed = 1                # Pour répétabilité
-    n_workers = 0           # Nombre de threads pour chargement des données (mettre à 0 sur Windows)
+    parser = argparse.ArgumentParser(
+        prog="GRO722",
+        description="Réseaux de Neurones Récurrents - Problématique",
+        exit_on_error=True,
+    )
+    parser.add_argument(
+        "-f", "--force_cpu", action="store_true", help="Forcer l'utilisation du CPU"
+    )
+    parser.add_argument(
+        "--training", type=bool, default=True, help="Entraîner le modèle", required=True
+    )
+    parser.add_argument("--test", type=bool, default=False, help="Tester le modèle")
+    parser.add_argument(
+        "-c",
+        "--learning_curves",
+        type=bool,
+        default=True,
+        help="Afficher les courbes d'apprentissage",
+    )
+    parser.add_argument(
+        "--gen_test_images", action="store_true", help="Générer les images de test"
+    )
+    parser.add_argument("-s", "--seed", default="None", help="Pour répétabilité")
+    parser.add_argument(
+        "-j",
+        "--num_workers",
+        type=int,
+        default=0,
+        help="Nombre de threads pour chargement des données",
+    )
+    parser.add_argument("-e", "--epochs", type=int, default=50, help="Nombre d'époques")
+    parser.add_argument(
+        "-b", "--batch_size", type=int, default=100, help="Taille des lots"
+    )
+    parser.add_argument(
+        "-lr", "--learning_rate", type=float, default=1e-2, help="Taux d'apprentissage"
+    )
+    parser.add_argument(
+        "--num_hidden",
+        type=int,
+        default=20,
+        help="Nombre de caches pour couches cachées",
+    )
+    parser.add_argument(
+        "--num_layers",
+        type=int,
+        default=2,
+        help="Nombre de couches dans l'architecture encodeur-décodeur",
+    )
+    parser.add_argument(
+        "--checkpoint", action="store_true", help="Charger le meilleur modèle"
+    )
+    parser.add_argument(
+        "--show_attention", action="store_true", help="Affichage de l'attention"
+    )
 
-    # À compléter
-    n_epochs = 0
-
+    args = parser.parse_args()
+    assert args.seed == "None" or isinstance(args.seed, int), (
+        f"seed must be either 'None' or an integer (got: {args.seed})."
+    )
+    if args.seed == "None":
+        seed = None
+    else:
+        seed = args.seed
     # ---------------- Fin Paramètres et hyperparamètres ----------------#
 
     # Initialisation des variables
     if seed is not None:
-        torch.manual_seed(seed) 
+        torch.manual_seed(seed)
         np.random.seed(seed)
 
-    # Choix du device
-    device = torch.device("cuda" if torch.cuda.is_available() and not force_cpu else "cpu")
+    # Choix de l'appareil
+    device = torch.device(
+        "cuda" if torch.cuda.is_available() and not args.force_cpu else "cpu"
+    )
 
     # Instanciation de l'ensemble de données
     # À compléter
