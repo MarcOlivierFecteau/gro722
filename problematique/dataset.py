@@ -33,8 +33,10 @@ class HandwrittenWords(Dataset):
 
         with open(filename, "rb") as fp:
             self.data = pickle.load(fp)
-            # NOTE: self.data := list[ list[target, array[x, y]] ]
-
+            # NOTE: self.data := list[ list[str, array[(x, y)]] ]
+            # échantillon
+            #   cible (y): str
+            #   coords (x): array[(x, y)] (2, T)
         # Normalisation [0, 1] des données
         for i, sample in enumerate(self.data):
             self.data[i][1] = (sample[1] - np.min(sample[1])) / np.max(sample[1])
@@ -115,6 +117,6 @@ class HandwrittenWords(Dataset):
 
 if __name__ == "__main__":
     # Code de test pour aider à compléter le dataset
-    a = HandwrittenWords("data_trainval.p")
+    a = HandwrittenWords("problematique/data_trainval.p")
     for i in range(10):
         a.visualisation(np.random.randint(0, len(a)))
