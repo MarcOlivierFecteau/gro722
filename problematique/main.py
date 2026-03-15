@@ -94,23 +94,55 @@ if __name__ == "__main__":
     )
 
     # Instanciation de l'ensemble de données
-    # À compléter
+    dataset = HandwrittenWords("problematique/data_trainval.p")
 
     
     # Séparation de l'ensemble de données (entraînement et validation)
-    # À compléter
-   
+    num_samples = len(dataset)
+    train_size = int(7 / 9 * num_samples)
+    val_size = num_samples - train_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
     # Instanciation des dataloaders
-    # À compléter
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.num_workers,
+    )
 
+    print("-" * 30)
+    print(f"Number of epochs: {args.epochs}")
+    print(f"Batch size: {args.batch_size}")
+    print(f"Number of samples in dataset: {len(dataset)}")
+    print(f"Number of training samples: {len(train_dataset)}")
+    print(f"Number of validation samples: {len(val_dataset)}")
+    print(f"Number of symbols: {dataset.num_symbols}")
+    print("-" * 30)
 
     # Instanciation du model
-    # À compléter
-
-
-    # Initialisation des variables
-    # À compléter
+    if args.checkpoint and os.path.exists("problematique/best_model.pt"):
+        model = torch.load("problematique/best_model.pt")
+    else:
+        model = Trajectory2Seq(
+            args.num_hidden,
+            args.num_layers,
+            dataset.int2sym,
+            dataset.sym2int,
+            dataset.num_symbols,
+            dataset.maxlength,
+            attention_mod=False,
+        )
+    print(
+        f"Nombre de paramètres: {sum(param.numel() for param in model.parameters() if param.requires_grad)}"
+    )
+    print("-" * 30)
 
     if trainning:
 
@@ -149,7 +181,7 @@ if __name__ == "__main__":
 
         # Affichage des résultats de test
         # À compléter
-        
+
         # Affichage de la matrice de confusion
         # À compléter
 
