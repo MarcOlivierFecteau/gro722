@@ -161,35 +161,197 @@ if __name__ == "__main__":
         criterion = nn.CrossEntropyLoss()  # NOTE: ignorer symboles <pad>
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
-        for epoch in range(1, n_epochs + 1):
+        for epoch in tqdm(range(1, args.epochs + 1)):
             # Entraînement
-            # À compléter
-            
+            running_train_distance = 0
+            running_train_loss = 0
+
+            model.train()
+            for batch, data in enumerate(tqdm(train_loader)):
+                coords, target = data
+                coords = coords.float()
+                target = target.long()
+                optimizer.zero_grad()
+                out, hidden, attn = model(coords)
+                out_ = out.view((-1, model.num_symbols))
+                target_ = target.view(-1)
+                loss = criterion(out_, target_)
+                loss.backward()
+                optimizer.step()
+                running_train_loss += loss.item()
+
+                outi = torch.argmax(out, dim=1).detach().tolist()
+                targeti = target.detach().tolist()
+                for i in range(len(targeti)):
+                    a = targeti[i]
+                    b = outi[i]
+                    targetlen = a[1]
+                    wordlen = b[1] if 1 in b else len(b)
+                    running_train_distance += (
+                        edit_distance(a[:targetlen], b[:wordlen]) / args.batch_size
+                    )
+                if batch % 100 == 0:
+                    print(
+                        f"Epoch {epoch},"
+                        f"Batch {batch},"
+                        f"Training loss: {running_train_loss / (batch + 1)},"
+                        f"Levenshtein distance: {running_train_distance / (batch + 1)}"
+                    )
+
             # Validation
-            # À compléter
+            running_val_distance = 0
+            running_val_loss = 0
 
-            # Ajouter les loss aux listes
-            # À compléter
+            model.eval()
+            breakpoint()
+            for batch, data in enumerate(val_loader):
+                coords, target = data
+                coords = coords.float()
+                target = target.long()
+                out, hidden, attn = model(coords)
+                target_1h = torch.zeros(
+                    (args.batch_size, model.maxlen["target"], model.num_symbols)
+                )
+                target_1h = target_1h.scatter_(
+                    2, target.view((args.batch_size, -1, 1)), 1
+                )
+                loss = criterion(out, target_1h)
+                running_val_loss += loss.item()
 
-            # Enregistrer les poids
-            # À compléter
-
+                outi = torch.argmax(out, dim=-1).detach().tolist()
+                targeti = target.detach().tolist()
+                for i in range(len(targeti)):
+                    a = targeti[i]
+                    b = outi[i]
+                    targetlen = a[1]
+                    wordlen = b[1] if 1 in b else len(b)
+                    running_val_distance += edit_distance(a[:targetlen], b[:wordlen])
 
             # Affichage
-            if learning_curves:
-                # visualization
-                # À compléter
-                pass
+            target, coords = test_dataset[np.random.randint(0, len(test_dataset))]  # type: ignore
+            target = target.unsqueeze(0).long()
+            coords = coords.unsqueeze(0).float()
+            out, hidden, attn = model(coords)
+            out = torch.argmax(out, dim=-1).detach().squeeze(0).tolist()
+            target = target.detach().squeeze(0).tolist()
+            target_str = "".join([dataset.int2sym[i] for i in target if i != 2])
+            out_str = "".join([dataset.int2sym[i] for i in target if i != 2])
 
-    if test:
+            print(f"Target: {target_str}, Output: {out_str}")
+            print(
+                f"Epoch {epoch},"
+                f"Validation loss: {running_val_loss / len(val_loader)},"
+                f"Levenshtein distance: {running_val_distance / len(val_loader)}"
+            )
+
+            if args.learning_curves:
+                train_distance.append(running_train_distance / len(train_loader))  # type: ignore
+                train_loss.append(running_train_loss / len(train_loader))  # type: ignore
+                val_distance.append(running_val_distance / len(val_loader))  # type: ignore
+                val_loss.append(running_val_loss / len(val_loader))  # type: ignore
+                ax[0].cla()  # type: ignore
+                ax[0].plot(train_loss, label="training")  # type: ignore
+                ax[0].plot(val_loss, label="validation")  # type: ignore
+                ax[0].legend()  # type: ignore
+                ax[1].cla()  # type: ignore
+                ax[1].plot(train_distance, label="training")  # type: ignore
+                ax[1].plot(val_distance, label="validation")  # type: ignore
+                ax[1].legend()  # type: ignore
+                plt.draw()
+                plt.pause(0.01)
+
+            # Enregistrer les poids
+            if epoch == 1 or (running_val_loss / len(val_loader)) < min(val_loss):  # type: ignore
+                torch.save(model, "problematique/best_model.pt")
+                with open("problematique/best_model.txt", "w") as f:
+                    f.write(
+                        f"Epoch: {epoch}, "
+                        f"Training loss: {running_train_loss / len(train_loader)}, "
+                        f"Levenshtein distance: {running_train_distance / len(train_loader)}, "
+                        f"Validation loss: {running_val_loss / len(val_loader)}, "
+                        f"Levenshtein distance: {running_val_distance / len(val_loader)}"
+                    )
+                    f.write(
+                        "Config:\n\t"
+                        f"num_hidden: {args.num_hidden}, "
+                        f"num_layers: {args.num_layers}, "
+                        f"learning_rate: {args.learning_rate}, "
+                        f"epochs: {args.epochs}, "
+                        f"batch_size: {args.batch_size}"
+                    )
+                    f.write(f"Criterion: {criterion}")
+                    f.write(f"Optimizer: {optimizer}")
+                    f.write(f"Model: {model}")
+
+            torch.save(model, "problematique/last_model.pt")
+
+    if args.test:
         # Évaluation
-        # À compléter
+        model = torch.load("best_model.pt")
+        model.eval()
+        running_val_loss = 0
+        distance = 0
+
+        criterion = nn.CrossEntropyLoss(
+            ignore_index=dataset.sym2int[dataset.pad_symbol]
+        )  # Ignorer symboles <pad>
 
         # Charger les données de tests
-        # À compléter
+        with open("problematique/data_testval.p", "rb") as fp:
+            test_dataset = pickle.load(fp)
+        test_loader = DataLoader(test_dataset)
 
-        # Affichage de l'attention
-        # À compléter (si nécessaire)
+        print("-" * 30)
+        print(f"Number of test samples: {len(test_dataset)}")
+        print("-" * 30)
+
+        for batch, data in enumerate(test_loader):
+            target, coords = data
+            target = target.long()
+            coords = coords.float()
+            out, hidden, attn = model(coords)
+            target_1h = torch.zeros(
+                (args.batch_size, model.maxlen["target"], model.num_symbols)
+            )
+            target_1h = target_1h.scatter_(2, target.view((args.batch_size, -1, 1)), 1)
+            loss = criterion(out.view((-1, model.num_symbols)), target.view(-1))
+            running_val_loss += loss.item()
+            outi = torch.argmax(out, dim=-1).detach().tolist()
+            targeti = target.detach().tolist()
+            for i in range(len(targeti)):
+                a = targeti[i]
+                b = outi[i]
+                targetlen = a[1]
+                wordlen = b[1] if 1 in b else len(b)
+                distance += edit_distance(a[:targetlen], b[:wordlen])
+
+        num_examples = 10
+        for _ in range(num_examples):
+            target, trajectory_seq = test_dataset[
+                np.random.randint(0, len(test_dataset))
+            ]
+
+            out, hidden, attn = model(trajectory_seq.unsqueeze(0).float())
+            out = torch.argmax(out, dim=-1).detach().squeeze(0).tolist()
+            target = target.detach().tolist()
+
+            target_str = "".join([model.int2sym[i] for i in target if i != 2])
+            out_str = "".join([model.int2sym[i] for i in out if i != 2])
+            print(f"Target: {target_str}, Output: {out_str}")
+
+            # Affichage de l'attention
+            if args.show_attention:
+                wordlen = len(out)
+                plt.figure(figsize=(1, 1 * wordlen))
+                for i in range(wordlen):
+                    plt.subplot(wordlen, 1, i + 1)
+                    attn_weights = attn[0, i, :].detach().numpy()
+                    trajectory = trajectory_seq.detach().numpy()
+                    plt.scatter(
+                        trajectory[0], trajectory[1], c=attn_weights, cmap="grey", s=10
+                    )
+                    plt.title(dataset.int2sym[out[i]])
+                plt.show(block=True)
 
         # Affichage des résultats de test
         # À compléter
