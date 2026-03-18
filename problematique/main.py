@@ -3,7 +3,6 @@
 
 import argparse
 import os
-import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,21 +22,31 @@ if __name__ == "__main__":
         exit_on_error=True,
     )
     parser.add_argument(
-        "-f", "--force_cpu", action="store_true", help="Forcer l'utilisation du CPU"
+        "-f",
+        "--force_cpu",
+        action=argparse.BooleanOptionalAction,
+        help="Forcer l'utilisation du CPU",
     )
     parser.add_argument(
-        "--training", type=bool, default=True, help="Entraîner le modèle", required=True
+        "--training",
+        action=argparse.BooleanOptionalAction,
+        help="Entraîner le modèle",
     )
-    parser.add_argument("--test", type=bool, default=False, help="Tester le modèle")
+    parser.add_argument(
+        "--test",
+        action=argparse.BooleanOptionalAction,
+        help="Tester le modèle",
+    )
     parser.add_argument(
         "-c",
         "--learning_curves",
-        type=bool,
-        default=True,
+        action=argparse.BooleanOptionalAction,
         help="Afficher les courbes d'apprentissage",
     )
     parser.add_argument(
-        "--gen_test_images", action="store_true", help="Générer les images de test"
+        "--gen_test_images",
+        action=argparse.BooleanOptionalAction,
+        help="Générer les images de test",
     )
     parser.add_argument("-s", "--seed", default="None", help="Pour répétabilité")
     parser.add_argument(
@@ -63,17 +72,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_layers",
         type=int,
-        default=2,
-        help="Nombre de couches dans l'architecture encodeur-décodeur",
+        default=1,
+        help='Nombre de couches récurrentes "empilées" dans l\'architecture encodeur-décodeur',
     )
     parser.add_argument(
         "--checkpoint", action="store_true", help="Charger le meilleur modèle"
     )
     parser.add_argument(
-        "--show_attention", action="store_true", help="Affichage de l'attention"
+        "-a",
+        "--attention",
+        action=argparse.BooleanOptionalAction,
+        help="Utiliser le module d'attention",
+    )
+    parser.add_argument(
+        "--show_attention",
+        action=argparse.BooleanOptionalAction,
+        help="Affichage de l'attention",
     )
 
     args = parser.parse_args()
+    breakpoint()
     assert args.seed == "None" or isinstance(args.seed, int), (
         f"seed must be either 'None' or an integer (got: {args.seed})."
     )
@@ -94,54 +112,56 @@ if __name__ == "__main__":
     )
 
     # Instanciation de l'ensemble de données
-    dataset = HandwrittenWords("problematique/data_trainval.p")
+    if args.training:
+        dataset = HandwrittenWords("problematique/data_trainval.p")
 
-    # Séparation de l'ensemble de données (entraînement et validation)
-    num_samples = len(dataset)
-    train_size = int(7 / 9 * num_samples)
-    val_size = num_samples - train_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+        # Séparation de l'ensemble de données (entraînement et validation)
+        num_samples = len(dataset)
+        train_size = int(7 / 9 * num_samples)
+        val_size = num_samples - train_size
+        train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-    # Instanciation des dataloaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-    )
-
-    print("-" * 30)
-    print(f"Number of epochs: {args.epochs}")
-    print(f"Batch size: {args.batch_size}")
-    print(f"Number of samples in dataset: {len(dataset)}")
-    print(f"Number of training samples: {len(train_dataset)}")
-    print(f"Number of validation samples: {len(val_dataset)}")
-    print(f"Number of symbols: {dataset.num_symbols}")
-    print("-" * 30)
-
-    # Instanciation du model
-    if args.checkpoint and os.path.exists("problematique/best_model.pt"):
-        model = torch.load("problematique/best_model.pt")
-    else:
-        model = Trajectory2Seq(
-            args.num_hidden,
-            args.num_layers,
-            dataset.int2sym,
-            dataset.sym2int,
-            dataset.num_symbols,
-            dataset.maxlength,
-            attention_mod=False,
+        # Instanciation des dataloaders
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
         )
-    print(
-        f"Nombre de paramètres: {sum(param.numel() for param in model.parameters() if param.requires_grad)}"
-    )
-    print("-" * 30)
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+        )
+
+        print("-" * 30)
+        print(f"Number of epochs: {args.epochs}")
+        print(f"Batch size: {args.batch_size}")
+        print(f"Number of samples in dataset: {len(dataset)}")
+        print(f"Number of training samples: {len(train_dataset)}")
+        print(f"Number of validation samples: {len(val_dataset)}")
+        print(f"Number of symbols: {dataset.num_symbols}")
+        print("-" * 30)
+
+        # Instanciation du model
+        if args.checkpoint and os.path.exists("problematique/best_model.pt"):
+            model = torch.load("problematique/best_model.pt")
+        else:
+            model = Trajectory2Seq(
+                args.num_hidden,
+                args.num_layers,
+                dataset.int2sym,
+                dataset.sym2int,
+                dataset.num_symbols,
+                dataset.maxlength,
+                device,
+                attention_mod=args.attention,
+            )
+        print(
+            f"Nombre de paramètres: {sum(param.numel() for param in model.parameters() if param.requires_grad)}"
+        )
+        print("-" * 30)
 
     if args.training:
         # Initialisation affichage
@@ -203,18 +223,15 @@ if __name__ == "__main__":
             running_val_loss = 0
 
             model.eval()
-            breakpoint()
             for batch, data in enumerate(val_loader):
                 coords, target = data
                 coords = coords.float()
                 target = target.long()
-                out, hidden, attn = model(coords)
+                out, hidden, attn = model(coords, target)
                 target_1h = torch.zeros(
-                    (args.batch_size, model.maxlen["target"], model.num_symbols)
+                    (out.size(0), model.maxlen["target"], model.num_symbols)
                 )
-                target_1h = target_1h.scatter_(
-                    2, target.view((args.batch_size, -1, 1)), 1
-                )
+                target_1h = target_1h.scatter_(2, target.view((out.size(0), -1, 1)), 1)
                 loss = criterion(out, target_1h)
                 running_val_loss += loss.item()
 
@@ -225,10 +242,12 @@ if __name__ == "__main__":
                     b = outi[i]
                     targetlen = a[1]
                     wordlen = b[1] if 1 in b else len(b)
-                    running_val_distance += edit_distance(a[:targetlen], b[:wordlen])
+                    running_val_distance += (
+                        edit_distance(a[:targetlen], b[:wordlen]) / args.batch_size
+                    )
 
             # Affichage
-            target, coords = test_dataset[np.random.randint(0, len(test_dataset))]  # type: ignore
+            coords, target = val_dataset[np.random.randint(0, len(val_dataset))]  # type: ignore
             target = target.unsqueeze(0).long()
             coords = coords.unsqueeze(0).float()
             out, hidden, attn = model(coords)
@@ -257,6 +276,13 @@ if __name__ == "__main__":
                 ax[1].plot(train_distance, label="training")  # type: ignore
                 ax[1].plot(val_distance, label="validation")  # type: ignore
                 ax[1].legend()  # type: ignore
+                ax[0].set_title("Loss")  # type: ignore
+                ax[1].set_title("Levenshtein Distance")  # type: ignore
+                ax[0].set_xlabel("Epoch")  # type: ignore
+                ax[0].set_ylabel("Loss")  # type: ignore
+                ax[1].set_ylabel("Levenshtein Distance")  # type: ignore
+                fig.tight_layout()  # type: ignore
+
                 plt.draw()
                 plt.pause(0.01)
 
@@ -284,22 +310,22 @@ if __name__ == "__main__":
                     f.write(f"Model: {model}")
 
             torch.save(model, "problematique/last_model.pt")
+        plt.show(block=True)
 
     if args.test:
         # Évaluation
-        model = torch.load("best_model.pt")
+        model = torch.load("problematique/best_model.pt", weights_only=False)
         model.eval()
         running_val_loss = 0
         distance = 0
 
-        criterion = nn.CrossEntropyLoss(
-            ignore_index=dataset.sym2int[dataset.pad_symbol]
-        )  # Ignorer symboles <pad>
-
         # Charger les données de tests
-        with open("problematique/data_testval.p", "rb") as fp:
-            test_dataset = pickle.load(fp)
+        test_dataset = HandwrittenWords("problematique/data_test.p")
         test_loader = DataLoader(test_dataset)
+
+        criterion = nn.CrossEntropyLoss(
+            ignore_index=test_dataset.sym2int[test_dataset.pad_symbol]
+        )  # Ignorer symboles <pad>
 
         print("-" * 30)
         print(f"Number of test samples: {len(test_dataset)}")
