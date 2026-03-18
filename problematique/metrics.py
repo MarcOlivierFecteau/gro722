@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def edit_distance(x, y):
+def edit_distance(x: list[str], y: list[str]):
     """
     Levenshtein distance. Time complexity: O(m*n). Space complexity: O(m*n).
 
@@ -17,9 +17,8 @@ def edit_distance(x, y):
     """
 
     m, n = len(x), len(y)
-    table = np.zeros(
-        (m + 1, n + 1)
-    )  # table[i, j] = minimum edits to transform x[:i] to y[:j]
+    table = np.zeros((m + 1, n + 1), dtype=np.int32)
+    # NOTE: table[i, j] = minimum edits to transform x[:i] to y[:j]
 
     # Base cases: converting to/from empty strings
     for i in range(m + 1):

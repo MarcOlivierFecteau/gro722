@@ -13,36 +13,41 @@ class Trajectory2Seq(nn.Module):
         symb2int: dict[str, int],
         num_symbols: int,
         maxlen: dict[str, int],
+        device: torch.types.Device,
         attention_mod: bool = False,
+        birnn: bool = False,
     ):
         super().__init__()
         # Definition des parametres
         self.hidden_dim = hidden_dim
-        self.n_layers = num_layers
+        self.num_layers = num_layers
         self.symb2int = symb2int
         self.int2symb = int2symb
         self.num_symbols = num_symbols
         self.maxlen = maxlen
         self.attention_mod = attention_mod
+        self.birnn = birnn
 
         # Définition des couches
         # Couches pour RNN
-        self.enc = nn.GRU(2, self.hidden_dim, self.n_layers, batch_first=True)
-        self.dec = nn.GRU(
-            self.hidden_dim, self.hidden_dim, self.n_layers, batch_first=True
+        self.encoder_layer = nn.GRU(
+            2, hidden_dim, num_layers, batch_first=True, bidirectional=birnn
         )
-        self.embed = nn.Embedding(self.num_symbols, self.hidden_dim)
+        self.decoder_layer = nn.GRU(
+            hidden_dim, hidden_dim, num_layers, batch_first=True
+        )
+        self.dec_embedding_layer = nn.Embedding(num_symbols, hidden_dim)
 
         # Couches pour attention
-        self.attn_ff = nn.Linear(self.hidden_dim * 2, self.hidden_dim)
-        self.query = nn.Linear(self.hidden_dim, self.hidden_dim)
+        self.attn_ff = nn.Linear(2 * hidden_dim, hidden_dim)
+        # self.hidden_to_query = nn.Linear(hidden_dim, hidden_dim)
 
         # Couche dense pour la sortie
         self.fc = nn.Linear(self.hidden_dim, self.num_symbols)
 
         self._decoder = self.decoder_with_attention if attention_mod else self.decoder
 
-    def encoder(self, x: Tensor):
+    def encoder(self, x: Tensor) -> tuple[Tensor, Tensor]:
         """
         Args:
             x (Tensor): Input sequence (array[(x, y)]).
@@ -51,16 +56,16 @@ class Trajectory2Seq(nn.Module):
             out (Tensor): Output sequence.
             hidden (Tensor): Hidden layer.
         """
-        x = x.permute(
-            0, 2, 1
-        )  # Equivalent of transpose applied on all samples of batch
-        out, hidden = self.enc(x, None)
+        x = x.permute(0, 2, 1)  # Match dimensions
+        out, hidden = self.encoder_layer(x, None)
         return out, hidden
 
-    def decoder(self, enc_out: Tensor, hidden: Tensor, target: Tensor | None = None):
+    def decoder(
+        self, enc_out: Tensor, hidden: Tensor, target: Tensor | None = None
+    ) -> tuple[Tensor, Tensor, Tensor | None]:
         """
         Args:
-            enc_out (Tensor): Encoder output (h[N-1]).
+            enc_out (Tensor): Encoder output (y[N-1]).
             hidden (Tensor): Decoder hidden layer (from previous layer).
             target (Tensor): Tokenized target (y).
 
@@ -68,14 +73,17 @@ class Trajectory2Seq(nn.Module):
             v_out (Tensor): Decoder output.
             hidden (Tensor): Decoder hidden layer (updated).
         """
+        device = hidden.device
         maxlen = self.maxlen["target"]
         batch_size = hidden.shape[1]
-        v_in = torch.zeros((batch_size, 1)).long()
-        v_out = torch.zeros((batch_size, maxlen, self.num_symbols))
+        v_in = torch.zeros((batch_size, 1), device=device).long()
+        v_out = torch.zeros((batch_size, maxlen, self.num_symbols), device=device)
 
         dec_hidden = hidden
         for i in range(maxlen):
-            dec_out, dec_hidden = self.dec(self.embed(v_in), dec_hidden)
+            dec_out, dec_hidden = self.decoder_layer(
+                self.dec_embedding_layer(v_in), dec_hidden
+            )
             dec_out = self.fc(dec_out)
             v_out[:, i, :] = dec_out.squeeze(1)
             v_in = torch.argmax(dec_out, dim=2)
@@ -94,9 +102,9 @@ class Trajectory2Seq(nn.Module):
             attn_out (Tensor): Attention output (a[0..M-1]).
             attn_weights (Tensor): Internal weights (w).
         """
-        query = self.query(query)
-        similarity = torch.bmm(values, query.permute(0, 2, 1)).squeeze(-1)
-        attn_weights = nn.functional.softmax(similarity, dim=-1).unsqueeze(1)
+        # query = self.hidden_to_query(query)  # Optional
+        similarity = torch.bmm(query, values.permute(0, 2, 1))
+        attn_weights = nn.functional.softmax(similarity, dim=-1)
         attn_out = torch.bmm(attn_weights, values)
         return attn_out, attn_weights
 
@@ -114,21 +122,23 @@ class Trajectory2Seq(nn.Module):
             hidden (Tensor): Decoder hidden layer (updated).
             attn_weights (Tensor): Attention module internal weights (w).
         """
+        device = hidden.device
         maxlen = self.maxlen["target"]
         batch_size = hidden.shape[1]
-        v_in = torch.zeros((batch_size, 1)).long()
-        v_out = torch.zeros((batch_size, maxlen, self.num_symbols))
+        v_in = torch.zeros((batch_size, 1), device=device).long()
+        v_out = torch.zeros((batch_size, maxlen, self.num_symbols), device=device)
         attn_weights = torch.zeros((batch_size, self.maxlen["coords"], maxlen))
 
         for i in range(maxlen):
-            query, hidden, _ = self.dec(self.embed(v_in), hidden)
-            attn_out, attn_weights = self.attention(query, enc_out)
-            attn_weights[:, :, i] = attn_weights.squeeze(1)
-            ff_out = self.attn_ff(torch.cat((query, attn_out), dim=-1))
+            query, hidden = self.decoder_layer(self.dec_embedding_layer(v_in), hidden)
+            attn_out, attn_weights = self.attention(enc_out, query)
+            # breakpoint()
+            ff_out = self.attn_ff(
+                torch.cat((query.squeeze(1), attn_out.squeeze(1)), dim=1)
+            )
             dec_out = self.fc(ff_out)
-
-            v_out[:, i, :] = dec_out.squeeze(1)
-            v_in = dec_out.argmax(dim=2)
+            v_out[:, i, :] = dec_out
+            v_in = torch.argmax(v_out[:, i : i + 1, :], dim=-1)
 
         return v_out, hidden, attn_weights
 
