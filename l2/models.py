@@ -143,9 +143,11 @@ class Seq2seq_attn(nn.Module):
 
         return attention_output, attention_weights
 
-    def decoderWithAttn(self, encoder_outs, hidden):
-        # Décodeur avec attention
-
+    def decoderWithAttn(
+        self,
+        encoder_outs: Tensor,
+        hidden: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
         # Initialisation des variables
         max_len = self.max_len[
             "en"
@@ -167,6 +169,9 @@ class Seq2seq_attn(nn.Module):
             dec_out, hidden = self.decoder_layer(self.en_embedding(vec_in), hidden)
             attention_out, attention_weights = self.attentionModule(
                 dec_out, encoder_outs
+            )
+            dec_out = self.att_combine(
+                torch.cat((dec_out.squeeze(1), attention_out.squeeze(1)), dim=1)
             )
             dec_out = self.fc(attention_out)
             vec_out[:, i, :] = dec_out.squeeze(1)
