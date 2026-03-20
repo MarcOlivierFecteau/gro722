@@ -41,31 +41,56 @@ def edit_distance(x: list[str], y: list[str]):
     return table[m, n]
 
 
-def confusion_matrix(true, pred, ignore=[], show=False):
+def confusion_matrix(
+    truth: list[str],
+    prediction: list[str],
+    ignore: list[str] | None = [],
+    classes: list[str] | None = None,
+    show: bool = False,
+):
     """
     Compute the confusion matrix.
 
     Args:
         true (list[str]): Target vector.
         pred (list[str]): Prediction vector.
-        ignore (list[str]): Classes excluded from the confusion matrix.
+        ignore (list[str] | None): Classes excluded from the confusion matrix.
+        classes (list[str] | None): Optional explicit class order.
+        show (bool): If True, display the confusion matrix.
+
     Returns:
-        confusion_mat (np.NDArray): Confusion matrix.
+        out (NDArray): Row-normalized confusion matrix.
     """
-    n = len(true)
-    classes = list(set(true))
-    num_classes = len(classes)
-    confusion_mat = np.zeros((num_classes, num_classes))
-    for i in range(n):
-        if true[i] in ignore:
+    if ignore is None:
+        ignore = []
+
+    if classes is None:
+        # Stable order: first appearance across truth + prediction
+        classes = []
+        seen = set()
+        for label in list(truth) + list(prediction):
+            if label not in seen and label not in ignore:
+                seen.add(label)
+                classes.append(label)
+    else:
+        classes = [c for c in classes if c not in ignore]
+
+    class2index = {c: i for i, c in enumerate(classes)}
+    confusion_mat = np.zeros((len(classes), len(classes)), dtype=float)
+
+    for t, p in zip(truth, prediction):
+        if t in ignore or p in ignore:
             continue
-        confusion_mat[classes.index(true[i]), classes.index(pred[i])] += 1
-    row_sums = np.sum(confusion_mat, axis=1)
+        if t not in class2index or p not in class2index:
+            continue
+        confusion_mat[class2index[t], class2index[p]] += 1
+
+    row_sums = confusion_mat.sum(axis=1, keepdims=True)
     confusion_mat = np.divide(
         confusion_mat,
-        row_sums[:, np.newaxis],
+        row_sums,
         out=np.full_like(confusion_mat, np.nan),
-        where=row_sums[:, np.newaxis] != 0,
+        where=row_sums != 0,
     )
 
     if show:
@@ -93,7 +118,7 @@ if __name__ == "__main__":
     # Levenshtein distance example from Wikipedia
     x = "kitten"
     y = "sitting"
-    distance = edit_distance(x, y)
+    distance = edit_distance(x.split(""), y.split(""))  # type: ignore
     assert distance == 3, (
         f"Expected Levenshtein distance of {x} and {y}: 3 (got {distance})."
     )
