@@ -14,8 +14,9 @@ class HandwrittenWords(Dataset):
 
     ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
-    def __init__(self, filename, smoothing: bool = False):
-        # Lecture du text
+    def __init__(self, filename: str):
+        super().__init__()
+        # Lecture du texte
         self.pad_symbol = pad_symbol = "<pad>"
         self.start_symbol = start_symbol = "<sos>"
         self.stop_symbol = stop_symbol = "<eos>"
@@ -37,9 +38,10 @@ class HandwrittenWords(Dataset):
             # échantillon
             #   cible (y): str
             #   coords (x): array[(x, y)] (2, T)
-        # Normalisation [0, 1] des données
+        # "Relativisation" des coordonnées (vectorisation)
         for i, sample in enumerate(self.data):
-            self.data[i][1] = (sample[1] - np.min(sample[1])) / np.max(sample[1])
+            self.data[i][1] = np.diff(sample[1], 1, axis=-1)
+            # self.data := list[ target (str), coords (NDArray) ]
 
         self.maxlength = dict()
         self.maxlength["target"] = max(len(sample[0]) for sample in self.data)
@@ -55,40 +57,29 @@ class HandwrittenWords(Dataset):
             for sample in self.data
         ]  # symbol-to-token pour cibles
 
-        self.num_symbols = len(self.symbols) + 3
+        self.num_symbols = len(self.sym2int) + 3
 
         # Ajout du padding aux séquences
         self.maxlength["target"] += 1
         self.maxlength["coords"] += 1
         for i, sample in enumerate(self.data):
+            target, coords = sample
+            # Padding target sequence with special symbols
             self.data[i][0] = (
-                sample[0]
+                target
                 + [self.sym2int[stop_symbol]]
                 + [self.sym2int[pad_symbol]]
-                * (self.maxlength["target"] - len(sample[0]) - 1)
+                * (self.maxlength["target"] - len(target) - 1)
             )
 
-            # Padding by repeating last element
-            self.data[i][1] = np.hstack(
-                (
-                    self.data[i][1],
-                    np.zeros((2, self.maxlength["coords"] - self.data[i][1].shape[1])),
-                )
-            )
+            # Padding "relative" input sequence with zeros to stay at last coordinate
+            pad_len = self.maxlength["coords"] - coords.shape[1]
 
-        # Smoothing with moving average
-        if smoothing:
-            for i in range(len(self.data)):
-                for j in range(2):
-                    win_size = 7
-                    conv = (
-                        np.convolve(self.data[i][1][j], np.ones(win_size), mode="valid")
-                        / win_size
-                    )
-                    pad_size = len(self.data[i][1][j]) - len(
-                        conv
-                    )  # Number of zeros for padding
-                    self.data[i][1][j] = np.pad(conv, (0, pad_size))  # Pad at end
+            if pad_len > 0:
+                padding = np.zeros((2, pad_len))
+                self.data[i][1] = np.hstack((coords, padding))
+            else:
+                self.data[i][1] = coords
 
     def __len__(self):
         return len(self.data)
