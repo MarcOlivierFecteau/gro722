@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+"""
+NOTES Consultation Problématique:
+    - Distance de Levenshtein ciblée: 0.5, MAIS:
+        - Pré-traitement à faire sur les données
+            - Normalisation01: introduit autre problème;
+            - Plutôt qu'utiliser les coordonnées absolues, on doit représenter les coordonnées comme une séquence de vecteurs entre deux points.
+                - `np.diff(dim=-1)` => vecteur des coordonnées "relatives".
+    - Padding des coordonnées avec vecteurs "relatifs": utiliser des zéros.
+"""
+
 import argparse
 import os
 
@@ -89,16 +99,17 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         help="Affichage de l'attention",
     )
+    parser.add_argument(
+        "--bidirectional",
+        action=argparse.BooleanOptionalAction,
+        help="Utiliser une couche bidirectionnelle",
+    )
 
     args = parser.parse_args()
-    breakpoint()
-    assert args.seed == "None" or isinstance(args.seed, int), (
-        f"seed must be either 'None' or an integer (got: {args.seed})."
-    )
     if args.seed == "None":
         seed = None
     else:
-        seed = args.seed
+        seed = int(args.seed)
     # ---------------- Fin Paramètres et hyperparamètres ----------------#
 
     # Initialisation des variables
@@ -146,7 +157,7 @@ if __name__ == "__main__":
 
         # Instanciation du model
         if args.checkpoint and os.path.exists("problematique/best_model.pt"):
-            model = torch.load("problematique/best_model.pt")
+            model = torch.load("problematique/best_model.pt", weights_only=False)
         else:
             model = Trajectory2Seq(
                 args.num_hidden,
@@ -157,13 +168,13 @@ if __name__ == "__main__":
                 dataset.maxlength,
                 device,
                 attention_mod=args.attention,
+                bidirectional=args.bidirectional,
             )
         print(
             f"Nombre de paramètres: {sum(param.numel() for param in model.parameters() if param.requires_grad)}"
         )
         print("-" * 30)
 
-    if args.training:
         # Initialisation affichage
         if args.learning_curves:
             train_distance: list[int] = []
@@ -182,7 +193,7 @@ if __name__ == "__main__":
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
         for epoch in tqdm(range(1, args.epochs + 1)):
-            # Entraînement
+            # @training
             running_train_distance = 0
             running_train_loss = 0
 
@@ -200,13 +211,14 @@ if __name__ == "__main__":
                 optimizer.step()
                 running_train_loss += loss.item()
 
-                outi = torch.argmax(out, dim=1).detach().tolist()
+                outi = torch.argmax(out, dim=-1).detach().tolist()
                 targeti = target.detach().tolist()
                 for i in range(len(targeti)):
                     a = targeti[i]
                     b = outi[i]
-                    targetlen = a[1]
-                    wordlen = b[1] if 1 in b else len(b)
+                    stop_symbol = dataset.sym2int[dataset.stop_symbol]
+                    targetlen = a.index(stop_symbol)
+                    wordlen = b.index(stop_symbol) if stop_symbol in b else len(b)
                     running_train_distance += (
                         edit_distance(a[:targetlen], b[:wordlen]) / args.batch_size
                     )
@@ -218,7 +230,7 @@ if __name__ == "__main__":
                         f"Levenshtein distance: {running_train_distance / (batch + 1)}"
                     )
 
-            # Validation
+            # @validation
             running_val_distance = 0
             running_val_loss = 0
 
@@ -228,11 +240,13 @@ if __name__ == "__main__":
                 coords = coords.float()
                 target = target.long()
                 out, hidden, attn = model(coords, target)
-                target_1h = torch.zeros(
-                    (out.size(0), model.maxlen["target"], model.num_symbols)
-                )
-                target_1h = target_1h.scatter_(2, target.view((out.size(0), -1, 1)), 1)
-                loss = criterion(out, target_1h)
+                logits = out.view(-1, model.num_symbols)
+                target_ = target.view(-1)
+                # target_1h = torch.zeros(
+                #     (out.size(0), model.maxlen["target"], model.num_symbols)
+                # )
+                # target_1h = target_1h.scatter_(2, target.view((out.size(0), -1, 1)), 1)
+                loss = criterion(logits, target_)
                 running_val_loss += loss.item()
 
                 outi = torch.argmax(out, dim=-1).detach().tolist()
@@ -240,8 +254,9 @@ if __name__ == "__main__":
                 for i in range(len(targeti)):
                     a = targeti[i]
                     b = outi[i]
-                    targetlen = a[1]
-                    wordlen = b[1] if 1 in b else len(b)
+                    stop_symbol = dataset.sym2int[dataset.stop_symbol]
+                    targetlen = a.index(stop_symbol)
+                    wordlen = b.index(stop_symbol) if stop_symbol in b else len(b)
                     running_val_distance += (
                         edit_distance(a[:targetlen], b[:wordlen]) / args.batch_size
                     )
@@ -254,7 +269,7 @@ if __name__ == "__main__":
             out = torch.argmax(out, dim=-1).detach().squeeze(0).tolist()
             target = target.detach().squeeze(0).tolist()
             target_str = "".join([dataset.int2sym[i] for i in target if i != 2])
-            out_str = "".join([dataset.int2sym[i] for i in target if i != 2])
+            out_str = "".join([dataset.int2sym[i] for i in out if i != 2])
 
             print(f"Target: {target_str}, Output: {out_str}")
             print(
@@ -287,7 +302,7 @@ if __name__ == "__main__":
                 plt.pause(0.01)
 
             # Enregistrer les poids
-            if epoch == 1 or (running_val_loss / len(val_loader)) < min(val_loss):  # type: ignore
+            if epoch == 1 or (running_val_loss / len(val_loader)) <= min(val_loss):  # type: ignore
                 torch.save(model, "problematique/best_model.pt")
                 with open("problematique/best_model.txt", "w") as f:
                     f.write(
@@ -313,7 +328,7 @@ if __name__ == "__main__":
         plt.show(block=True)
 
     if args.test:
-        # Évaluation
+        # @test
         model = torch.load("problematique/best_model.pt", weights_only=False)
         model.eval()
         running_val_loss = 0
@@ -332,24 +347,47 @@ if __name__ == "__main__":
         print("-" * 30)
 
         for batch, data in enumerate(test_loader):
-            target, coords = data
-            target = target.long()
+            coords, target = data
             coords = coords.float()
-            out, hidden, attn = model(coords)
-            target_1h = torch.zeros(
-                (args.batch_size, model.maxlen["target"], model.num_symbols)
-            )
-            target_1h = target_1h.scatter_(2, target.view((args.batch_size, -1, 1)), 1)
-            loss = criterion(out.view((-1, model.num_symbols)), target.view(-1))
+            target = target.long()
+            out, hidden, attn = model(coords, target)
+            logits = out.view(-1, model.num_symbols)
+            target_ = target.view(-1)
+            # target_1h = torch.zeros(
+            #     (out.size(0), model.maxlen["target"], model.num_symbols)
+            # )
+            # target_1h = target_1h.scatter_(2, target.view((out.size(0), -1, 1)), 1)
+            loss = criterion(logits, target_)
             running_val_loss += loss.item()
+
             outi = torch.argmax(out, dim=-1).detach().tolist()
             targeti = target.detach().tolist()
             for i in range(len(targeti)):
                 a = targeti[i]
                 b = outi[i]
-                targetlen = a[1]
-                wordlen = b[1] if 1 in b else len(b)
-                distance += edit_distance(a[:targetlen], b[:wordlen])
+                stop_symbol = test_dataset.sym2int[test_dataset.stop_symbol]
+                targetlen = a.index(stop_symbol)
+                wordlen = b.index(stop_symbol) if stop_symbol in b else len(b)
+                distance += edit_distance(a[:targetlen], b[:wordlen]) / args.batch_size
+
+            # coords, target = data
+            # target = target.long()
+            # coords = coords.float()
+            # out, hidden, attn = model(coords)
+            # target_1h = torch.zeros(
+            #     (args.batch_size, model.maxlen["target"], model.num_symbols)
+            # )
+            # target_1h = target_1h.scatter_(2, target.view((args.batch_size, -1, 1)), 1)
+            # loss = criterion(out.view((-1, model.num_symbols)), target.view(-1))
+            # running_val_loss += loss.item()
+            # outi = torch.argmax(out, dim=-1).detach().tolist()
+            # targeti = target.detach().tolist()
+            # for i in range(len(targeti)):
+            #     a = targeti[i]
+            #     b = outi[i]
+            #     targetlen = a[1]
+            #     wordlen = b[1] if 1 in b else len(b)
+            #     distance += edit_distance(a[:targetlen], b[:wordlen])
 
         num_examples = 10
         for _ in range(num_examples):
@@ -376,7 +414,7 @@ if __name__ == "__main__":
                     plt.scatter(
                         trajectory[0], trajectory[1], c=attn_weights, cmap="grey", s=10
                     )
-                    plt.title(dataset.int2sym[out[i]])
+                    plt.title(test_dataset.int2sym[out[i]])
                 plt.show(block=True)
 
         # Affichage des résultats de test
@@ -384,5 +422,3 @@ if __name__ == "__main__":
 
         # Affichage de la matrice de confusion
         # À compléter
-
-        pass
