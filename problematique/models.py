@@ -22,8 +22,8 @@ class Trajectory2Seq(nn.Module):
         # Definition des parametres
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        self.symb2int = symb2int
-        self.int2symb = int2symb
+        self.sym2int = symb2int
+        self.int2sym = int2symb
         self.num_symbols = num_symbols
         self.maxlen = maxlen
         self.attention_mod = attention_mod
@@ -108,7 +108,7 @@ class Trajectory2Seq(nn.Module):
         device = hidden.device
         maxlen = self.maxlen["target"]
         batch_size = hidden.shape[1]
-        v_in = torch.full((batch_size, 1), self.symb2int["<sos>"], device=device).long()
+        v_in = torch.full((batch_size, 1), self.sym2int["<sos>"], device=device).long()
         v_out = torch.zeros((batch_size, maxlen, self.num_symbols), device=device)
 
         dec_hidden = hidden
@@ -150,36 +150,50 @@ class Trajectory2Seq(nn.Module):
     ):
         """
         Args:
-            enc_out (Tensor): Encoder output (h[N-1]).
-            hidden (Tensor): Decoder hidden layer (from previous layer).
-            target (Tensor): Tokenized target (y).
+            enc_out (Tensor): Encoder output (N, L_src, H).
+            hidden (Tensor): Decoder hidden layer (1, N, H).
+            target (Tensor): Tokenized target (N, L_target).
 
         Returns:
-            v_out (Tensor): Decoder output.
-            hidden (Tensor): Decoder hidden layer (updated).
-            attn_weights (Tensor): Attention module internal weights (w).
+            v_out (Tensor): Decoder output (N, L_target, num_symbols).
+            hidden (Tensor): Decoder hidden layer (1, N, H).
+            all_attn_weights (Tensor): Attention module internal weights (N, L_target, L_src).
         """
         device = hidden.device
         maxlen = self.maxlen["target"]
         batch_size = hidden.shape[1]
-        v_in = torch.zeros((batch_size, 1), device=device).long()
-        v_out = torch.zeros((batch_size, maxlen, self.num_symbols), device=device)
-        attn_weights = torch.zeros((batch_size, self.maxlen["coords"], maxlen))
+        src_length = enc_out.size(1)
+        start_symbol = self.sym2int["<sos>"]
 
+        v_in = torch.full(
+            (batch_size, 1), start_symbol, device=device, dtype=torch.long
+        )
+        v_out = torch.zeros((batch_size, maxlen, self.num_symbols), device=device)
+        all_attn_weights = torch.zeros((batch_size, maxlen, src_length), device=device)
+
+        dec_hidden = hidden
         for i in range(maxlen):
-            query, hidden = self.decoder_layer(self.dec_embedding_layer(v_in), hidden)
-            attn_out, attn_weights = self.attention(enc_out, query)
-            # breakpoint()
+            query, dec_hidden = self.decoder_layer(
+                self.dec_embedding_layer(v_in), dec_hidden
+            )  # query := (N, 1, H), dec_hidden := (1, N, H)
+            attn_out, attn_weights = self.attention(
+                enc_out, query
+            )  # attn_out := (N, 1, H), attn_weights := (N, 1, L_src)
             ff_out = self.attn_ff(
                 torch.cat((query.squeeze(1), attn_out.squeeze(1)), dim=1)
             )
-            dec_out = self.fc(ff_out)
+            dec_out = self.fc(ff_out)  # (N, num_symbols)
             v_out[:, i, :] = dec_out
-            v_in = torch.argmax(v_out[:, i : i + 1, :], dim=-1)
+            all_attn_weights[:, i, :] = attn_weights.squeeze(1)
 
-        return v_out, hidden, attn_weights
+            if target is not None and i < target.size(1):
+                v_in = target[:, i].unsqueeze(1)
+            else:
+                v_in = torch.argmax(dec_out, dim=-1, keepdim=True)
+
+        return v_out, dec_hidden, all_attn_weights
 
     def forward(self, x: Tensor, target: Tensor | None = None):
-        out, hidden = self.encoder(x)
+        out, hidden = self.encoder(x)  # out := (N, L_src, H), hidden := (1, N, H)
         out, hidden, attn = self._decoder(out, hidden, target)
         return out, hidden, attn
