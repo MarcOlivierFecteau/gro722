@@ -38,10 +38,26 @@ class HandwrittenWords(Dataset):
             # échantillon
             #   cible (y): str
             #   coords (x): array[(x, y)] (2, T)
+
+        # Keep absolute coordinates for displaying attention results
+        self.original = [sample[1] for sample in self.data]
+        maxlen = max(coords.shape[1] for coords in self.original)
+        padded = []
+        for coords in self.original:
+            T = coords.shape[1]
+            if T < maxlen:
+                last_coord = coords[:, -1:]  # (2, 1)
+                pad = np.repeat(last_coord, maxlen - T, axis=1)
+                coords_padded = np.concat((coords, pad), axis=1)
+            else:
+                coords_padded = coords
+            padded.append(coords_padded)
+        self.original = torch.tensor(np.stack(padded), dtype=torch.float64)  # (N, 2, L)
+
         # "Relativisation" des coordonnées (vectorisation)
         for i, sample in enumerate(self.data):
             self.data[i][1] = np.diff(sample[1], 1, axis=-1)
-            # self.data := list[ target (str), coords (NDArray) ]
+            # self.data := list[ target (str), coords' (NDArray) ]
 
         self.maxlength = dict()
         self.maxlength["target"] = max(len(sample[0]) for sample in self.data)
@@ -84,10 +100,10 @@ class HandwrittenWords(Dataset):
     def __len__(self):
         return len(self.data)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         return torch.tensor(self.data[idx][1]), torch.tensor(self.data[idx][0])
 
-    def visualisation(self, idx):
+    def visualisation(self, idx: int):
         # Visualisation des échantillons
         plt.figure()
         title_no_special = [
@@ -100,14 +116,25 @@ class HandwrittenWords(Dataset):
                 self.sym2int[self.pad_symbol],
             ]
         ]
-        plt.plot(self.data[idx][1][0], self.data[idx][1][1], label="Original")
-        plt.legend()
-        plt.title("".join(title_no_special))
+        plt.subplot(2, 1, 1)
+        plt.title("Original")
+        plt.plot(
+            self.original[idx][0],
+            self.original[idx][1],
+        )
+        plt.subplot(2, 1, 2)
+        plt.title("Vectorized Representation")
+        plt.scatter(
+            self.data[idx][1][0],
+            self.data[idx][1][1],
+        )
+        plt.suptitle("".join(title_no_special))
+        plt.tight_layout()
         plt.show(block=True)
 
 
 if __name__ == "__main__":
     # Code de test pour aider à compléter le dataset
     a = HandwrittenWords("problematique/data_trainval.p")
-    for i in range(10):
+    for i in range(5):
         a.visualisation(np.random.randint(0, len(a)))
