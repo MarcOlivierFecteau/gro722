@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def edit_distance(x: list[str], y: list[str]):
+def edit_distance(x: list[str] | list[int], y: list[str] | list[int]) -> int:
     """
     Levenshtein distance. Time complexity: O(m*n). Space complexity: O(m*n).
 
@@ -74,9 +74,10 @@ def confusion_matrix(
                 classes.append(label)
     else:
         classes = [c for c in classes if c not in ignore]
+    classes = sorted(classes)
 
     class2index = {c: i for i, c in enumerate(classes)}
-    confusion_mat = np.zeros((len(classes), len(classes)), dtype=float)
+    confusion_mat = np.zeros((len(classes), len(classes)), dtype=np.float32)
 
     for t, p in zip(truth, prediction):
         if t in ignore or p in ignore:
@@ -108,7 +109,10 @@ def __plot_confusion_matrix(confusion_mat: np.typing.NDArray, classes: list[str]
     ax.set_title("Confusion Matrix")
     ax.set_xlabel("Prediction")
     ax.set_ylabel("Truth")
-    ax.set_xticks(range(num_classes), classes, rotation=45)
+    if all(len(c) == 1 for c in classes):  # No need to rotate when only letters
+        ax.set_xticks(range(num_classes), classes, rotation=0)
+    else:
+        ax.set_xticks(range(num_classes), classes, rotation=45)
     ax.set_yticks(range(num_classes), classes)
     fig.tight_layout()
     plt.show(block=True)
