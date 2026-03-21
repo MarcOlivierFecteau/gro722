@@ -1,0 +1,23 @@
+Epoch: 24, Training loss: 0.40981049033311695, Levenshtein distance: 0.5615384615384661, Validation loss: 0.3552580326795578, Levenshtein distance: 0.5058333333333279Config:
+	num_hidden: 20, num_layers: 1, learning_rate: 0.005, epochs: 25, batch_size: 100Criterion: CrossEntropyLoss()Optimizer: Adam (
+Parameter Group 0
+    amsgrad: False
+    betas: (0.9, 0.999)
+    capturable: False
+    decoupled_weight_decay: False
+    differentiable: False
+    eps: 1e-08
+    foreach: None
+    fused: None
+    lr: 0.005
+    maximize: False
+    weight_decay: 0
+)Model: Trajectory2Seq(
+  (encoder_layer): GRU(2, 20, batch_first=True, bidirectional=True)
+  (decoder_layer): GRU(20, 20, batch_first=True)
+  (dec_embedding_layer): Embedding(32, 20)
+  (attn_ff): Linear(in_features=40, out_features=20, bias=True)
+  (hidden_bridge): Linear(in_features=40, out_features=20, bias=True)
+  (enc_out_bridge): Linear(in_features=40, out_features=20, bias=True)
+  (fc): Linear(in_features=20, out_features=32, bias=True)
+)
