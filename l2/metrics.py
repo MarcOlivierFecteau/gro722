@@ -4,7 +4,7 @@
 import numpy as np
 
 
-def edit_distance(a: list[str], b: list[str]):
+def edit_distance(a: list[str] | list[int], b: list[str] | list[int]):
     """Distance de Levenshtein."""
     # ---------------------- Laboratoire 2 - Question 1 - Début de la section à compléter ------------------
     m, n = len(a), len(b)

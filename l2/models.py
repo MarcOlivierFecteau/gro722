@@ -8,8 +8,24 @@ from torch import Tensor, nn
 
 class Seq2seq(nn.Module):
     def __init__(
-        self, n_hidden, n_layers, int2symb, symb2int, dict_size, device, max_len
+        self,
+        n_hidden: int,
+        n_layers: int,
+        int2symb: dict[str, dict[int, str]],
+        symb2int: dict[str, dict[str, int]],
+        dict_size: dict[str, int],
+        device: torch.types.Device,
+        max_len: dict[str, int],
     ):
+        """
+        Args:
+            n_hidden: H_out.
+            n_layers: P.
+            int2symb: token-to-symbol map.
+            symb2int: symbol-to-token map.
+            dict_size: number of symbols for each language.
+            max_len: maximum length of a sequence (special symbols included) for each language.
+        """
         super(Seq2seq, self).__init__()
 
         # Definition des paramètres
@@ -32,7 +48,6 @@ class Seq2seq(nn.Module):
         self.to(device)
 
     def encoder(self, x) -> tuple[Tensor, Tensor]:
-        # Encodeur
         # ---------------------- Laboratoire 2 - Question 3 - Début de la section à compléter -----------------
         x = self.fr_embedding(x)
         out, hidden = self.encoder_layer(x, None)
@@ -40,7 +55,11 @@ class Seq2seq(nn.Module):
 
         return out, hidden
 
-    def decoder(self, encoder_outs, hidden) -> tuple[Tensor, Tensor, Tensor | None]:
+    def decoder(
+        self,
+        encoder_outs: Tensor,
+        hidden: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor | None]:
         # Initialisation des variables
         max_len = self.max_len[
             "en"
@@ -60,9 +79,8 @@ class Seq2seq(nn.Module):
             dec_out, dec_hidden = self.decoder_layer(
                 self.en_embedding(vec_in), dec_hidden
             )
-            dec_out = self.fc(dec_out)
-            vec_out[:, i, :] = dec_out.squeeze(1)
-            vec_in = dec_out.argmax(dim=-1)
+            vec_out[:, i, :] = self.fc(dec_out).clone().squeeze(1)
+            vec_in = torch.argmax(vec_out[:, i : i + 1, :], dim=2)
             # ---------------------- Laboratoire 2 - Question 3 - Début de la section à compléter -----------------
 
         return vec_out, hidden, None
@@ -76,8 +94,25 @@ class Seq2seq(nn.Module):
 
 class Seq2seq_attn(nn.Module):
     def __init__(
-        self, n_hidden, n_layers, int2symb, symb2int, dict_size, device, max_len
+        self,
+        n_hidden: int,
+        n_layers: int,
+        int2symb: dict[str, dict[int, str]],
+        symb2int: dict[str, dict[str, int]],
+        dict_size: dict[str, int],
+        device: torch.types.Device,
+        max_len: dict[str, int],
     ):
+        """
+        Args:
+            n_hidden: H_out.
+            n_layers: P.
+            int2symb: token-to-symbol map.
+            symb2int: symbol-to-token map.
+            dict_size: number of symbols for each language.
+            max_len: maximum length of a sequence (special symbols included) for each language.
+        """
+
         super(Seq2seq_attn, self).__init__()
 
         # Definition des paramètres
@@ -120,25 +155,15 @@ class Seq2seq_attn(nn.Module):
         # Attention
 
         # ---------------------- Laboratoire 2 - Question 4 - Début de la section à compléter -----------------
-        attention_weights = torch.zeros(
-            (query.shape[0], query.shape[1], values.shape[1])
-        )
-        attention_output = torch.zeros(
-            (query.shape[0], query.shape[1], values.shape[2])
-        )
-
-        for i in range(query.shape[0]):
-            for j in range(query.shape[1]):
-                for k in range(values.shape[1]):
-                    attention_weights[i, j, k] = torch.dot(query[i, j], values[i, k])
-                attention_weights[i, j] = nn.functional.softmax(
-                    attention_weights[i, j], dim=-1
-                )
-
-        for i in range(query.shape[0]):
-            for j in range(query.shape[1]):
-                for k in range(values.shape[1]):
-                    attention_output[i, j] += attention_weights[i, j, k] * values[i, k]
+        # attention_weights = torch.zeros(
+        #     (query.shape[0], query.shape[1], values.shape[1])
+        # )
+        # attention_output = torch.zeros(
+        #     (query.shape[0], query.shape[1], values.shape[2])
+        # )
+        similarity = torch.bmm(query, values.permute(0, 2, 1))
+        attention_weights = nn.functional.softmax(similarity, dim=-1)
+        attention_output = torch.bmm(attention_weights, values)
         # ---------------------- Laboratoire 2 - Question 4 - Début de la section à compléter -----------------
 
         return attention_output, attention_weights

@@ -21,7 +21,7 @@ if __name__ == "__main__":
     learning_curves = 1  # Visualiser les courbes d'apprentissage pendant l'entrainement
     test = 1  # Visualiser la generation sur des echantillons de validation
     batch_size = 100  # Taille des lots
-    n_epochs = 50  # Nombre d'iteration sur l'ensemble de donnees
+    n_epochs = 20  # Nombre d'iteration sur l'ensemble de donnees
     lr = 0.01  # Taux d'apprentissage pour l'optimizateur
 
     n_hidden = 20  # Nombre de neurones caches par couche
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     n_workers = 0  # Nombre de fils pour charger les donnees
     seed = None  # Pour repetabilite
-    attention_mod: bool = False
+    attention_mod: bool = True
     # ------------ Fin des paramètres et hyperparamètres ------------#
 
     # Initialisation des variables
@@ -129,8 +129,8 @@ if __name__ == "__main__":
                         epoch,
                         n_epochs,
                         batch_idx * batch_size,
-                        len(dataload_train.dataset),
-                        100.0 * batch_idx * batch_size / len(dataload_train.dataset),
+                        len(dataload_train.dataset),  # type: ignore
+                        100.0 * batch_idx * batch_size / len(dataload_train.dataset),  # type: ignore
                         running_loss_train / (batch_idx + 1),
                         dist / len(dataload_train),
                     ),
@@ -141,23 +141,22 @@ if __name__ == "__main__":
                 "Train - Epoch: {}/{} [{}/{} ({:.0f}%)] Average Loss: {:.6f} Average Edit Distance: {:.6f}".format(
                     epoch,
                     n_epochs,
-                    (batch_idx + 1) * batch_size,
-                    len(dataload_train.dataset),
-                    100.0 * (batch_idx + 1) * batch_size / len(dataload_train.dataset),
-                    running_loss_train / (batch_idx + 1),
+                    (batch_idx + 1) * batch_size,  # type: ignore
+                    len(dataload_train.dataset),  # type: ignore
+                    100.0 * (batch_idx + 1) * batch_size / len(dataload_train.dataset),  # type: ignore
+                    running_loss_train / (batch_idx + 1),  # type: ignore
                     dist / len(dataload_train),
                 ),
                 end="\r",
             )
-            print("\n")
             # Affichage graphique
             if learning_curves:
-                train_loss.append(running_loss_train / len(dataload_train))
-                train_dist.append(dist / len(dataload_train))
-                ax.cla()
-                ax.plot(train_loss, label="training loss")
-                ax.plot(train_dist, label="training distance")
-                ax.legend()
+                train_loss.append(running_loss_train / len(dataload_train))  # type: ignore
+                train_dist.append(dist / len(dataload_train))  # type: ignore
+                ax.cla()  # type: ignore
+                ax.plot(train_loss, label="training loss")  # type: ignore
+                ax.plot(train_dist, label="training distance")  # type: ignore
+                ax.legend()  # type: ignore
                 plt.draw()
                 plt.pause(0.01)
 
@@ -173,7 +172,7 @@ if __name__ == "__main__":
         # Évaluation
 
         # Chargement des poids
-        model = torch.load("l2/model.pt")
+        model = torch.load("l2/model.pt", weights_only=False)
         dataset.symb2int = model.symb2int
         dataset.int2symb = model.int2symb
 
@@ -183,7 +182,7 @@ if __name__ == "__main__":
             fr_seq, target_seq = dataset[np.random.randint(0, len(dataset))]
 
             # Évaluation de la séquence
-            output, hidden, attn = model(torch.tensor(fr_seq)[None, :].to(device))
+            output, hidden, attn = model(fr_seq[None, :].to(device))
             out = torch.argmax(output, dim=2).detach().cpu()[0, :].tolist()
 
             # Affichage
@@ -193,7 +192,8 @@ if __name__ == "__main__":
             ]
             out_seq = [model.int2symb["en"][i] for i in out]
 
-            out_seq = out_seq[: out_seq.index("<eos>") + 1]
+            if "<eos>" in out_seq:
+                out_seq = out_seq[: out_seq.index("<eos>") + 1]
             in_seq = in_seq[: in_seq.index("<eos>") + 1]
             target = target[: target.index("<eos>") + 1]
 
