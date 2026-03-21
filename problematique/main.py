@@ -189,13 +189,15 @@ if __name__ == "__main__":
             ax[1].set_ylabel("Levenshtein Distance")
 
         # Fonction de coût et optimizateur
-        criterion = nn.CrossEntropyLoss()  # NOTE: ignorer symboles <pad>
+        criterion = nn.CrossEntropyLoss(
+            ignore_index=dataset.sym2int[dataset.pad_symbol]
+        )
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
         for epoch in tqdm(range(1, args.epochs + 1)):
             # @training
             running_train_distance = 0
-            running_train_loss = 0
+            running_train_loss = 0.0
 
             model.train()
             for batch, data in enumerate(tqdm(train_loader)):
@@ -232,7 +234,7 @@ if __name__ == "__main__":
 
             # @validation
             running_val_distance = 0
-            running_val_loss = 0
+            running_val_loss = 0.0
 
             model.eval()
             for batch, data in enumerate(val_loader):
@@ -242,10 +244,6 @@ if __name__ == "__main__":
                 out, hidden, attn = model(coords, target)
                 logits = out.view(-1, model.num_symbols)
                 target_ = target.view(-1)
-                # target_1h = torch.zeros(
-                #     (out.size(0), model.maxlen["target"], model.num_symbols)
-                # )
-                # target_1h = target_1h.scatter_(2, target.view((out.size(0), -1, 1)), 1)
                 loss = criterion(logits, target_)
                 running_val_loss += loss.item()
 
@@ -330,95 +328,143 @@ if __name__ == "__main__":
     if args.test:
         # @test
         model = torch.load("problematique/best_model.pt", weights_only=False)
+        model.to(device)
         model.eval()
-        running_val_loss = 0
-        distance = 0
 
         # Charger les données de tests
         test_dataset = HandwrittenWords("problematique/data_test.p")
-        test_loader = DataLoader(test_dataset)
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+        )
 
-        criterion = nn.CrossEntropyLoss(
-            ignore_index=test_dataset.sym2int[test_dataset.pad_symbol]
-        )  # Ignorer symboles <pad>
+        pad_symbol = test_dataset.sym2int[test_dataset.pad_symbol]
+        stop_symbol = test_dataset.sym2int[test_dataset.stop_symbol]
+        start_symbol = test_dataset.sym2int[test_dataset.start_symbol]
+
+        criterion = nn.CrossEntropyLoss(ignore_index=pad_symbol)
 
         print("-" * 30)
         print(f"Number of test samples: {len(test_dataset)}")
         print("-" * 30)
 
-        for batch, data in enumerate(test_loader):
-            coords, target = data
-            coords = coords.float()
-            target = target.long()
-            out, hidden, attn = model(coords, target)
-            logits = out.view(-1, model.num_symbols)
-            target_ = target.view(-1)
-            # target_1h = torch.zeros(
-            #     (out.size(0), model.maxlen["target"], model.num_symbols)
-            # )
-            # target_1h = target_1h.scatter_(2, target.view((out.size(0), -1, 1)), 1)
-            loss = criterion(logits, target_)
-            running_val_loss += loss.item()
+        def trim_at_eos(seq: list[int], eos_token: int, pad_token: int) -> list[int]:
+            out = []
+            for token in seq:
+                if token == eos_token:
+                    break
+                out.append(token)
+            return out
 
-            outi = torch.argmax(out, dim=-1).detach().tolist()
-            targeti = target.detach().tolist()
-            for i in range(len(targeti)):
-                a = targeti[i]
-                b = outi[i]
-                stop_symbol = test_dataset.sym2int[test_dataset.stop_symbol]
-                targetlen = a.index(stop_symbol)
-                wordlen = b.index(stop_symbol) if stop_symbol in b else len(b)
-                distance += edit_distance(a[:targetlen], b[:wordlen]) / args.batch_size
+        def tokens_to_string(tokens: list[int], int2sym: dict[int, str]) -> str:
+            return "".join(int2sym[t] for t in tokens)
 
-            # coords, target = data
-            # target = target.long()
-            # coords = coords.float()
-            # out, hidden, attn = model(coords)
-            # target_1h = torch.zeros(
-            #     (args.batch_size, model.maxlen["target"], model.num_symbols)
-            # )
-            # target_1h = target_1h.scatter_(2, target.view((args.batch_size, -1, 1)), 1)
-            # loss = criterion(out.view((-1, model.num_symbols)), target.view(-1))
-            # running_val_loss += loss.item()
-            # outi = torch.argmax(out, dim=-1).detach().tolist()
-            # targeti = target.detach().tolist()
-            # for i in range(len(targeti)):
-            #     a = targeti[i]
-            #     b = outi[i]
-            #     targetlen = a[1]
-            #     wordlen = b[1] if 1 in b else len(b)
-            #     distance += edit_distance(a[:targetlen], b[:wordlen])
+        running_test_loss = 0.0
+        running_distance = 0
+        exact_matches = 0
+        num_samples = 0
 
-        num_examples = 10
-        for _ in range(num_examples):
-            target, trajectory_seq = test_dataset[
-                np.random.randint(0, len(test_dataset))
-            ]
+        all_truth_characters: list[str] = []
+        all_prediction_characters: list[str] = []
 
-            out, hidden, attn = model(trajectory_seq.unsqueeze(0).float())
-            out = torch.argmax(out, dim=-1).detach().squeeze(0).tolist()
-            target = target.detach().tolist()
+        with torch.no_grad():
+            for batch, data in enumerate(test_loader):
+                coords, target = data
+                coords = coords.float().to(device)
+                target = target.long().to(device)
+                out, hidden, attn = model(coords, target)
+                logits = out.view(-1, model.num_symbols)
+                target_ = target.view(-1)
+                loss = criterion(logits, target_)
+                running_test_loss += loss.item()
 
-            target_str = "".join([model.int2sym[i] for i in target if i != 2])
-            out_str = "".join([model.int2sym[i] for i in out if i != 2])
-            print(f"Target: {target_str}, Output: {out_str}")
+                prediction = torch.argmax(out, dim=-1)
 
-            # Affichage de l'attention
-            if args.show_attention:
-                wordlen = len(out)
-                plt.figure(figsize=(1, 1 * wordlen))
-                for i in range(wordlen):
-                    plt.subplot(wordlen, 1, i + 1)
-                    attn_weights = attn[0, i, :].detach().numpy()
-                    trajectory = trajectory_seq.detach().numpy()
-                    plt.scatter(
-                        trajectory[0], trajectory[1], c=attn_weights, cmap="grey", s=10
-                    )
-                    plt.title(test_dataset.int2sym[out[i]])
-                plt.show(block=True)
+                prediction_list = prediction.cpu().tolist()
+                target_list = target.cpu().tolist()
 
-        # Affichage des résultats de test
-        # À compléter
+                for p_seq, t_seq in zip(prediction_list, target_list):
+                    p_trimmed = trim_at_eos(p_seq, stop_symbol, pad_symbol)
+                    t_trimmed = trim_at_eos(t_seq, stop_symbol, pad_symbol)
+                    running_distance += edit_distance(p_trimmed, t_trimmed)
+                    exact_matches += int(p_trimmed == t_trimmed)
+                    num_samples += 1
+
+                    # Align for character-level confusion matrix
+                    common_length = min(len(p_trimmed), len(t_trimmed))
+                    for i in range(common_length):
+                        all_prediction_characters.append(
+                            test_dataset.int2sym[p_trimmed[i]]
+                        )
+                        all_truth_characters.append(test_dataset.int2sym[t_trimmed[i]])
+
+        avg_test_loss = running_test_loss / len(test_loader)
+        avg_distance = running_distance / num_samples
+        exact_match_accuracy = exact_matches / num_samples
+
+        print("Test results:")
+        print(f"Average loss: {avg_test_loss:.4f}")
+        print(f"Average Levenshtein distance: {avg_distance:.4f}")
+        print(f"Exact-match accuracy: {100 * exact_match_accuracy:.4f}%")
+
+        # Display examples
+        print("-" * 30)
+        print("Examples")
+        print("-" * 30)
+
+        num_examples = min(5, len(test_dataset))
+        with torch.no_grad():
+            for _ in range(num_examples):
+                i = np.random.randint(0, len(test_dataset))
+                coords, target = test_dataset[i]
+                abs_coords = test_dataset.original[i]
+
+                coords = coords.unsqueeze(0).float().to(device)
+                target = target.long().tolist()
+
+                out, hidden, attn = model(coords)
+                prediction = torch.argmax(out, dim=-1).squeeze(0).cpu().tolist()
+
+                p_trimmed = trim_at_eos(prediction, stop_symbol, pad_symbol)
+                t_trimmed = trim_at_eos(target, stop_symbol, pad_symbol)
+
+                prediction_str = tokens_to_string(p_trimmed, test_dataset.int2sym)
+                target_str = tokens_to_string(t_trimmed, test_dataset.int2sym)
+
+                print(f"Target: {target_str:15s} | Prediction: {prediction_str}")
+
+                if args.show_attention and attn is not None:
+                    # TODO: display results using absolute coords, not relative vectors.
+                    num_attn_steps = attn.size(
+                        1
+                    )  # Prevents indexing past available attention steps
+                    wordlen = min(len(p_trimmed), num_attn_steps)
+
+                    plt.figure(figsize=(4, max(2, wordlen)))
+                    plt.suptitle(f"Attention Visualization\n(target: {target_str})")
+                    for i in range(wordlen):
+                        plt.subplot(wordlen, 1, i + 1)
+                        attn_weights = attn[0, i, :].detach().cpu().numpy()
+                        trajectory = abs_coords.detach().cpu().numpy()
+                        plt.plot(trajectory[0], trajectory[1], "k", alpha=0.2)
+                        plt.scatter(
+                            trajectory[0],
+                            trajectory[1],
+                            c=1 - attn_weights,
+                            cmap="grey",
+                            s=10,
+                        )
+                        plt.title(test_dataset.int2sym[p_trimmed[i]])
+                    plt.tight_layout()
+                    plt.show(block=True)
 
         # Affichage de la matrice de confusion
-        # À compléter
+        if len(all_truth_characters) > 0:
+            confusion_mat = confusion_matrix(
+                all_truth_characters,
+                all_prediction_characters,
+                ignore=[],
+                show=True,
+            )
