@@ -42,7 +42,7 @@ class Trajectory2Seq(nn.Module):
 
         # Couches pour attention
         self.attn_ff = nn.Linear(2 * hidden_dim, hidden_dim)
-        # self.hidden_to_query = nn.Linear(hidden_dim, hidden_dim)
+        # self.hidden_to_query = nn.Linear(hidden_dim, hidden_dim)  # Futile
 
         if bidirectional:
             self.hidden_bridge = nn.Linear(2 * hidden_dim, hidden_dim)
@@ -97,7 +97,7 @@ class Trajectory2Seq(nn.Module):
     ) -> tuple[Tensor, Tensor, Tensor | None]:
         """
         Args:
-            enc_out (Tensor): Encoder output (v).
+            enc_out (Tensor): Encoder output (v). Unused: exists to keep consistent signature.
             hidden (Tensor): Decoder hidden layer (h).
             target (Tensor): Tokenized target (y).
 
@@ -125,19 +125,19 @@ class Trajectory2Seq(nn.Module):
             v_in = torch.argmax(dec_out, dim=2)
             teach_next = torch.rand((1,)).tolist()[0] > self.teach_threshold
 
-        return v_out, hidden, None
+        return v_out, dec_hidden, None
 
     def attention(self, values: Tensor, query: Tensor):
         """
         Compute similiarity, softmax and weighting functions in attention module.
 
         Args:
-            values (Tensor): Encoder output (v[0..N-1]).
-            query (Tensor): Decoder output (q[0..M-1]).
+            values (Tensor): Encoder output (N, L_src, H).
+            query (Tensor): Decoder output (N, 1, H).
 
         Returns:
-            attn_out (Tensor): Attention output (a[0..M-1]).
-            attn_weights (Tensor): Internal weights (w).
+            attn_out (Tensor): Attention output (N, 1, H).
+            attn_weights (Tensor): Internal weights (N, 1, L_src).
         """
         # query = self.hidden_to_query(query)  # Optional
         similarity = torch.bmm(query, values.permute(0, 2, 1))
