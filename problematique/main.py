@@ -53,11 +53,6 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         help="Afficher les courbes d'apprentissage",
     )
-    parser.add_argument(
-        "--gen_test_images",
-        action=argparse.BooleanOptionalAction,
-        help="Générer les images de test",
-    )
     parser.add_argument("-s", "--seed", default="None", help="Pour répétabilité")
     parser.add_argument(
         "-j",
@@ -104,6 +99,11 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         help="Utiliser une couche bidirectionnelle",
     )
+    parser.add_argument(
+        "--dry_run",
+        action=argparse.BooleanOptionalAction,
+        help="Only show total number of parameters",
+    )
 
     args = parser.parse_args()
     if args.seed == "None":
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     )
 
     # Instanciation de l'ensemble de données
-    if args.training:
+    if args.training or args.dry_run:
         dataset = HandwrittenWords("problematique/data_trainval.p")
 
         # Séparation de l'ensemble de données (entraînement et validation)
@@ -174,6 +174,8 @@ if __name__ == "__main__":
             f"Nombre de paramètres: {sum(param.numel() for param in model.parameters() if param.requires_grad)}"
         )
         print("-" * 30)
+        if args.dry_run:
+            exit(0)
 
         # Initialisation affichage
         if args.learning_curves:
@@ -188,7 +190,7 @@ if __name__ == "__main__":
             ax[0].set_ylabel("Loss")
             ax[1].set_ylabel("Levenshtein Distance")
 
-        # Fonction de coût et optimizateur
+        # Fonction de coût et optimisateur
         criterion = nn.CrossEntropyLoss(
             ignore_index=dataset.sym2int[dataset.pad_symbol]
         )
@@ -304,23 +306,23 @@ if __name__ == "__main__":
                 torch.save(model, "problematique/best_model.pt")
                 with open("problematique/best_model.txt", "w") as f:
                     f.write(
-                        f"Epoch: {epoch}, "
-                        f"Training loss: {running_train_loss / len(train_loader)}, "
-                        f"Levenshtein distance: {running_train_distance / len(train_loader)}, "
-                        f"Validation loss: {running_val_loss / len(val_loader)}, "
-                        f"Levenshtein distance: {running_val_distance / len(val_loader)}"
+                        f"Epoch: {epoch}\n"
+                        f"Training loss: {running_train_loss / len(train_loader)}\n"
+                        f"\tLevenshtein distance: {running_train_distance / len(train_loader)}\n"
+                        f"Validation loss: {running_val_loss / len(val_loader)}\n"
+                        f"\tLevenshtein distance: {running_val_distance / len(val_loader)}\n"
                     )
                     f.write(
-                        "Config:\n\t"
-                        f"num_hidden: {args.num_hidden}, "
-                        f"num_layers: {args.num_layers}, "
-                        f"learning_rate: {args.learning_rate}, "
-                        f"epochs: {args.epochs}, "
-                        f"batch_size: {args.batch_size}"
+                        "Config:\n"
+                        f"\tnum_hidden: {args.num_hidden}\n"
+                        f"\tnum_layers: {args.num_layers}\n"
+                        f"\tlearning_rate: {args.learning_rate}\n"
+                        f"\tepochs: {args.epochs}\n"
+                        f"\tbatch_size: {args.batch_size}\n"
                     )
-                    f.write(f"Criterion: {criterion}")
-                    f.write(f"Optimizer: {optimizer}")
-                    f.write(f"Model: {model}")
+                    f.write(f"Criterion: {criterion}\n")
+                    f.write(f"Optimizer:\n\t{optimizer}\n")
+                    f.write(f"Model:\n\t{model}\n")
 
             torch.save(model, "problematique/last_model.pt")
         plt.show(block=True)
@@ -350,7 +352,7 @@ if __name__ == "__main__":
         print(f"Number of test samples: {len(test_dataset)}")
         print("-" * 30)
 
-        def trim_at_eos(seq: list[int], eos_token: int, pad_token: int) -> list[int]:
+        def trim_at_eos(seq: list[int], eos_token: int) -> list[int]:
             out = []
             for token in seq:
                 if token == eos_token:
@@ -386,8 +388,8 @@ if __name__ == "__main__":
                 target_list = target.cpu().tolist()
 
                 for p_seq, t_seq in zip(prediction_list, target_list):
-                    p_trimmed = trim_at_eos(p_seq, stop_symbol, pad_symbol)
-                    t_trimmed = trim_at_eos(t_seq, stop_symbol, pad_symbol)
+                    p_trimmed = trim_at_eos(p_seq, stop_symbol)
+                    t_trimmed = trim_at_eos(t_seq, stop_symbol)
                     running_distance += edit_distance(p_trimmed, t_trimmed)
                     exact_matches += int(p_trimmed == t_trimmed)
                     num_samples += 1
@@ -427,8 +429,8 @@ if __name__ == "__main__":
                 out, hidden, attn = model(coords)
                 prediction = torch.argmax(out, dim=-1).squeeze(0).cpu().tolist()
 
-                p_trimmed = trim_at_eos(prediction, stop_symbol, pad_symbol)
-                t_trimmed = trim_at_eos(target, stop_symbol, pad_symbol)
+                p_trimmed = trim_at_eos(prediction, stop_symbol)
+                t_trimmed = trim_at_eos(target, stop_symbol)
 
                 prediction_str = tokens_to_string(p_trimmed, test_dataset.int2sym)
                 target_str = tokens_to_string(t_trimmed, test_dataset.int2sym)
